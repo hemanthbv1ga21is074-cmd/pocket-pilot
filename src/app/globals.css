@@ -1,0 +1,85 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+:root {
+  --green-900: #0E3B2C;
+  --green-700: #14533D;
+  --income: #2E9E6B;
+  --bg-page: #F6F4EE;
+  --bg-card: #FFFFFF;
+  --text-primary: #1E2421;
+  --text-muted: #5C6660;
+  --text-muted-token: #7C857F;
+  --border: #E4E2DA;
+  --expense: #D9695F;
+  --warning: #D9A441;
+}
+
+.dark {
+  --green-900: #0A291F;
+  --green-700: #1E6F50;
+  --income: #45B883;
+  --bg-page: #0F1512;
+  --bg-card: #17201B;
+  --text-primary: #EDEBE4;
+  --text-muted: #9FA8A2;
+  --text-muted-token: #9FA8A2;
+  --border: #26332C;
+  --expense: #E58076;
+  --warning: #E6B555;
+}
+
+@layer base {
+  *,
+  *::before,
+  *::after {
+    border-color: var(--border);
+  }
+
+  html {
+    background-color: var(--bg-page);
+    color: var(--text-primary);
+    -webkit-font-smoothing: antialiased;
+    -moz-osx-font-smoothing: grayscale;
+  }
+
+  body {
+    background-color: var(--bg-page);
+    color: var(--text-primary);
+    min-height: 100vh;
+    overflow-x: hidden;
+  }
+}
+
+.tabular-nums {
+  font-variant-numeric: tabular-nums;
+}
+
+/* Ensure small foreground text using semantic income/expense tokens meets WCAG 2.1 AA 4.5:1 contrast on light surfaces */
+:root .text-income {
+  color: #166E46;
+}
+
+:root .text-expense {
+  color: #B03A30;
+}
+
+.dark .text-income {
+  color: #45B883;
+}
+
+.dark .text-expense {
+  color: #F28B82;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+    scroll-behavior: auto !important;
+  }
+}
