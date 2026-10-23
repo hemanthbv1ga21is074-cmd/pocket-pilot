@@ -83,14 +83,14 @@ isOneToOne: false
                   ]
                 },"transactions": {
                   Row: {
-                    "amount_minor": number,"category": Database["public"]['Enums']["category_key"],"created_at": string,"description": string,"id": string,"is_sample": boolean,"notes": string | null,"recurring_payment_id": string | null,"txn_date": string,"type": Database["public"]['Enums']["txn_type"],"updated_at": string,"user_id": string
+                    "amount_minor": number,"category": Database["public"]['Enums']["category_key"],"created_at": string,"description": string,"id": string,"is_reimbursed": boolean,"is_sample": boolean,"is_split": boolean,"notes": string | null,"payment_method": string,"recurring_payment_id": string | null,"reimbursable_minor": number,"split_with": string | null,"txn_date": string,"type": Database["public"]['Enums']["txn_type"],"updated_at": string,"user_id": string
                   }
                   ComputedFields: never
                   Insert: {
-                    "amount_minor": number,"category": Database["public"]['Enums']["category_key"],"created_at"?: string,"description": string,"id": string,"is_sample"?: boolean,"notes"?: string | null,"recurring_payment_id"?: string | null,"txn_date": string,"type": Database["public"]['Enums']["txn_type"],"updated_at"?: string,"user_id"?: string
+                    "amount_minor": number,"category": Database["public"]['Enums']["category_key"],"created_at"?: string,"description": string,"id": string,"is_reimbursed"?: boolean,"is_sample"?: boolean,"is_split"?: boolean,"notes"?: string | null,"payment_method"?: string,"recurring_payment_id"?: string | null,"reimbursable_minor"?: number,"split_with"?: string | null,"txn_date": string,"type": Database["public"]['Enums']["txn_type"],"updated_at"?: string,"user_id"?: string
                   }
                   Update: {
-                    "amount_minor"?: number,"category"?: Database["public"]['Enums']["category_key"],"created_at"?: string,"description"?: string,"id"?: string,"is_sample"?: boolean,"notes"?: string | null,"recurring_payment_id"?: string | null,"txn_date"?: string,"type"?: Database["public"]['Enums']["txn_type"],"updated_at"?: string,"user_id"?: string
+                    "amount_minor"?: number,"category"?: Database["public"]['Enums']["category_key"],"created_at"?: string,"description"?: string,"id"?: string,"is_reimbursed"?: boolean,"is_sample"?: boolean,"is_split"?: boolean,"notes"?: string | null,"payment_method"?: string,"recurring_payment_id"?: string | null,"reimbursable_minor"?: number,"split_with"?: string | null,"txn_date"?: string,"type"?: Database["public"]['Enums']["txn_type"],"updated_at"?: string,"user_id"?: string
                   }
                   Relationships: [
                     {

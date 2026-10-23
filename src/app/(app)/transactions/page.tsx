@@ -13,6 +13,9 @@ import {
   AlertCircle,
   ChevronLeft,
   ChevronRight,
+  Wallet,
+  Users,
+  CheckCircle2,
 } from 'lucide-react';
 import { toast } from 'sonner';
 import {
@@ -31,18 +34,26 @@ import {
 } from '@/components/ui';
 import {
   ALL_CATEGORIES,
+  PAYMENT_METHODS,
   formatMoney,
   formatDisplayDate,
   getCategoryLabel,
+  getPaymentMethodShortLabel,
+  computeWalletSummary,
+  computeSplitReimbursementSummary,
+  getPersonalShareMinor,
   transactionsToCsv,
   type CategoryKey,
+  type PaymentMethodKey,
   type TransactionRecord,
   type TxnType,
 } from '@/lib/finance';
 import {
   useProfile,
+  useTransactionsRange,
   usePaginatedTransactions,
   useDeleteTransaction,
+  useSettleSplitTransaction,
   fetchFilteredTransactionsForExport,
 } from '@/features/shared/use-finance-data';
 import { CategoryIcon } from '@/features/shared/category-icon';
@@ -63,6 +74,10 @@ export default function TransactionsPage() {
   const [categoryFilter, setCategoryFilter] = React.useState<CategoryKey | 'all'>(
     initialCategoryParam
   );
+  const [paymentMethodFilter, setPaymentMethodFilter] = React.useState<
+    PaymentMethodKey | 'all'
+  >('all');
+  const [onlySplits, setOnlySplits] = React.useState(false);
   const [startDate, setStartDate] = React.useState('');
   const [endDate, setEndDate] = React.useState('');
   const [sortBy, setSortBy] = React.useState<'txn_date' | 'amount_minor'>('txn_date');
@@ -103,6 +118,8 @@ export default function TransactionsPage() {
     search: debouncedSearch,
     type: typeFilter,
     category: categoryFilter,
+    paymentMethod: paymentMethodFilter,
+    onlySplits,
     startDate: startDate || undefined,
     endDate: endDate || undefined,
     sortBy,
@@ -111,12 +128,26 @@ export default function TransactionsPage() {
 
   const { data, isLoading, isError, error, refetch } =
     usePaginatedTransactions(queryParams);
+  const allTxnsQuery = useTransactionsRange();
   const deleteMutation = useDeleteTransaction();
+  const settleSplitMutation = useSettleSplitTransaction();
+
+  const allTransactions = allTxnsQuery.data ?? [];
+  const walletBreakdown = React.useMemo(
+    () => computeWalletSummary(allTransactions),
+    [allTransactions]
+  );
+  const splitSummary = React.useMemo(
+    () => computeSplitReimbursementSummary(allTransactions),
+    [allTransactions]
+  );
 
   const hasActiveFilters =
     debouncedSearch.trim() !== '' ||
     typeFilter !== 'all' ||
     categoryFilter !== 'all' ||
+    paymentMethodFilter !== 'all' ||
+    onlySplits ||
     startDate !== '' ||
     endDate !== '';
 
@@ -125,6 +156,8 @@ export default function TransactionsPage() {
     setDebouncedSearch('');
     setTypeFilter('all');
     setCategoryFilter('all');
+    setPaymentMethodFilter('all');
+    setOnlySplits(false);
     setStartDate('');
     setEndDate('');
     setPage(1);
@@ -137,6 +170,8 @@ export default function TransactionsPage() {
         search: debouncedSearch,
         type: typeFilter,
         category: categoryFilter,
+        paymentMethod: paymentMethodFilter,
+        onlySplits,
         startDate: startDate || undefined,
         endDate: endDate || undefined,
         sortBy,
@@ -174,6 +209,67 @@ export default function TransactionsPage() {
 
   return (
     <div className="space-y-6">
+      {/* Multi-Account / Wallet Breakdown & Split Reimbursements Banner */}
+      <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-5">
+        {walletBreakdown.map((w) => {
+          const isSelected = paymentMethodFilter === w.method;
+          return (
+            <button
+              key={w.method}
+              type="button"
+              onClick={() => {
+                setPaymentMethodFilter((prev) => (prev === w.method ? 'all' : w.method));
+                setPage(1);
+              }}
+              className={`rounded-card border p-4 text-left transition-all ${
+                isSelected
+                  ? 'border-[#14533D] bg-[#14533D]/10 dark:border-[#45B883] dark:bg-[#45B883]/15'
+                  : 'border-border bg-card hover:bg-black/[0.02] dark:hover:bg-white/[0.02]'
+              }`}
+            >
+              <div className="flex items-center justify-between text-xs text-muted">
+                <span className="font-medium">{w.label}</span>
+                <Wallet className="h-3.5 w-3.5 text-[#14533D] dark:text-[#45B883]" />
+              </div>
+              <p className="mt-1.5 text-lg font-bold tabular-nums text-primary">
+                {formatMoney(w.expenseMinor, { currency })}{' '}
+                <span className="text-xs font-normal text-muted">spent</span>
+              </p>
+              <div className="mt-1 flex items-center justify-between text-[11px] text-muted">
+                <span>{w.txnCount} txns</span>
+                <span className="tabular-nums">{w.expenseSharePct}% of spend</span>
+              </div>
+            </button>
+          );
+        })}
+
+        {/* Split Reimbursements ("Friends Owe You") Card */}
+        <button
+          type="button"
+          onClick={() => {
+            setOnlySplits((prev) => !prev);
+            setPage(1);
+          }}
+          className={`rounded-card border p-4 text-left transition-all ${
+            onlySplits
+              ? 'border-[#14533D] bg-[#14533D]/10 dark:border-[#45B883] dark:bg-[#45B883]/15'
+              : 'border-border bg-card hover:bg-black/[0.02] dark:hover:bg-white/[0.02]'
+          }`}
+        >
+          <div className="flex items-center justify-between text-xs text-muted">
+            <span className="font-medium">Friends Owe You (Splits)</span>
+            <Users className="h-3.5 w-3.5 text-income" />
+          </div>
+          <p className="mt-1.5 text-lg font-bold tabular-nums text-income">
+            {formatMoney(splitSummary.pendingReimbursementsMinor, { currency })}
+          </p>
+          <div className="mt-1 flex items-center justify-between text-[11px] text-muted">
+            <span>{splitSummary.pendingCount} pending</span>
+            <span>{splitSummary.settledCount} settled</span>
+          </div>
+        </button>
+      </div>
+
       <Card>
         <CardHeader className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
           <div>
@@ -210,10 +306,10 @@ export default function TransactionsPage() {
         <CardContent className="space-y-5">
           {/* Filter Bar */}
           <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-6">
-            <div className="lg:col-span-2">
+            <div className="lg:col-span-1">
               <Input
                 label="Search description"
-                placeholder="Search transactions..."
+                placeholder="Search..."
                 prefixAddon={<Search className="h-4 w-4" />}
                 value={searchInput}
                 onChange={(e) => setSearchInput(e.target.value)}
@@ -244,6 +340,19 @@ export default function TransactionsPage() {
               options={[
                 { value: 'all', label: 'All categories' },
                 ...ALL_CATEGORIES.map((c) => ({ value: c.key, label: c.label })),
+              ]}
+            />
+
+            <Select
+              label="Account / Mode"
+              value={paymentMethodFilter}
+              onChange={(e) => {
+                setPaymentMethodFilter(e.target.value as PaymentMethodKey | 'all');
+                setPage(1);
+              }}
+              options={[
+                { value: 'all', label: 'All accounts' },
+                ...PAYMENT_METHODS.map((pm) => ({ value: pm.key, label: pm.label })),
               ]}
             />
 
@@ -287,6 +396,17 @@ export default function TransactionsPage() {
                 onClick={() => toggleSort('amount_minor')}
               >
                 Amount ({sortBy === 'amount_minor' ? (sortDir === 'desc' ? 'High–Low' : 'Low–High') : 'Click'})
+              </Button>
+              <Button
+                variant={onlySplits ? 'secondary' : 'ghost'}
+                size="sm"
+                leftIcon={<Users className="h-3.5 w-3.5" />}
+                onClick={() => {
+                  setOnlySplits((v) => !v);
+                  setPage(1);
+                }}
+              >
+                Split bills only
               </Button>
             </div>
 
@@ -373,140 +493,217 @@ export default function TransactionsPage() {
                       <th className="px-4 py-3">Date</th>
                       <th className="px-4 py-3">Description</th>
                       <th className="px-4 py-3">Category</th>
+                      <th className="px-4 py-3">Account</th>
                       <th className="px-4 py-3">Type</th>
                       <th className="px-4 py-3 text-right">Amount</th>
                       <th className="px-4 py-3 text-right">Actions</th>
                     </tr>
                   </thead>
                   <tbody className="divide-y divide-border">
-                    {data.rows.map((txn) => (
-                      <tr
-                        key={txn.id}
-                        className="hover:bg-black/[0.02] dark:hover:bg-white/[0.02] transition-colors"
-                      >
-                        <td className="whitespace-nowrap px-4 py-3.5 text-muted tabular-nums">
-                          {formatDisplayDate(txn.txn_date)}
-                        </td>
-                        <td className="px-4 py-3.5">
-                          <p className="font-medium text-primary">{txn.description}</p>
-                          {txn.notes && (
-                            <p className="text-xs text-muted truncate max-w-xs">{txn.notes}</p>
-                          )}
-                        </td>
-                        <td className="whitespace-nowrap px-4 py-3.5">
-                          <span className="inline-flex items-center gap-2 text-sm text-primary">
-                            <CategoryIcon category={txn.category} className="h-4 w-4 text-muted" />
-                            {getCategoryLabel(txn.category)}
-                          </span>
-                        </td>
-                        <td className="whitespace-nowrap px-4 py-3.5">
-                          <Badge variant={txn.type === 'income' ? 'income' : 'expense'}>
-                            {txn.type === 'income' ? 'Income' : 'Expense'}
-                          </Badge>
-                        </td>
-                        <td
-                          className={`whitespace-nowrap px-4 py-3.5 text-right font-semibold tabular-nums ${
-                            txn.type === 'income' ? 'text-income' : 'text-expense'
-                          }`}
+                    {data.rows.map((txn) => {
+                      const hasSplit =
+                        txn.type === 'expense' &&
+                        Boolean(txn.is_split) &&
+                        (txn.reimbursable_minor ?? 0) > 0;
+                      const personalShare = getPersonalShareMinor(txn);
+
+                      return (
+                        <tr
+                          key={txn.id}
+                          className="hover:bg-black/[0.02] dark:hover:bg-white/[0.02] transition-colors"
                         >
-                          {formatMoney(
-                            txn.type === 'income' ? txn.amount_minor : -txn.amount_minor,
-                            { currency, showPlusSign: true }
-                          )}
-                        </td>
-                        <td className="whitespace-nowrap px-4 py-3.5 text-right">
-                          <div className="inline-flex items-center justify-end gap-1">
-                            <button
-                              type="button"
-                              aria-label={`Edit ${txn.description}`}
-                              onClick={() => {
-                                setEditingTxn(txn);
-                                setDialogOpen(true);
-                              }}
-                              className="inline-flex min-h-[44px] min-w-[44px] items-center justify-center rounded-control text-muted hover:bg-black/5 hover:text-primary dark:hover:bg-white/5"
-                            >
-                              <Pencil className="h-4 w-4" aria-hidden="true" />
-                            </button>
-                            <button
-                              type="button"
-                              aria-label={`Delete ${txn.description}`}
-                              onClick={() => setDeletingTxn(txn)}
-                              className="inline-flex min-h-[44px] min-w-[44px] items-center justify-center rounded-control text-muted hover:bg-expense/10 hover:text-expense"
-                            >
-                              <Trash2 className="h-4 w-4" aria-hidden="true" />
-                            </button>
-                          </div>
-                        </td>
-                      </tr>
-                    ))}
+                          <td className="whitespace-nowrap px-4 py-3.5 text-muted tabular-nums">
+                            {formatDisplayDate(txn.txn_date)}
+                          </td>
+                          <td className="px-4 py-3.5">
+                            <p className="font-medium text-primary">{txn.description}</p>
+                            {txn.notes && (
+                              <p className="text-xs text-muted truncate max-w-xs">{txn.notes}</p>
+                            )}
+                            {hasSplit && (
+                              <div className="mt-1 flex flex-wrap items-center gap-1.5">
+                                <Badge variant={txn.is_reimbursed ? 'success' : 'warning'}>
+                                  {txn.is_reimbursed
+                                    ? `Split settled (${formatMoney(txn.reimbursable_minor ?? 0, { currency })})`
+                                    : `Owed ${formatMoney(txn.reimbursable_minor ?? 0, { currency })}${
+                                        txn.split_with ? ` by ${txn.split_with}` : ''
+                                      }`}
+                                </Badge>
+                                <span className="text-[11px] text-muted tabular-nums">
+                                  Your share: {formatMoney(personalShare, { currency })}
+                                </span>
+                                {!txn.is_reimbursed && (
+                                  <button
+                                    type="button"
+                                    onClick={() =>
+                                      settleSplitMutation.mutate({
+                                        id: txn.id,
+                                        is_reimbursed: true,
+                                      })
+                                    }
+                                    className="inline-flex items-center gap-1 rounded-full bg-income/15 px-2 py-0.5 text-[11px] font-semibold text-income hover:bg-income/25"
+                                  >
+                                    <CheckCircle2 className="h-3 w-3" />
+                                    Mark settled
+                                  </button>
+                                )}
+                              </div>
+                            )}
+                          </td>
+                          <td className="whitespace-nowrap px-4 py-3.5">
+                            <span className="inline-flex items-center gap-2 text-sm text-primary">
+                              <CategoryIcon category={txn.category} className="h-4 w-4 text-muted" />
+                              {getCategoryLabel(txn.category)}
+                            </span>
+                          </td>
+                          <td className="whitespace-nowrap px-4 py-3.5">
+                            <Badge variant="default">
+                              {getPaymentMethodShortLabel(txn.payment_method)}
+                            </Badge>
+                          </td>
+                          <td className="whitespace-nowrap px-4 py-3.5">
+                            <Badge variant={txn.type === 'income' ? 'income' : 'expense'}>
+                              {txn.type === 'income' ? 'Income' : 'Expense'}
+                            </Badge>
+                          </td>
+                          <td
+                            className={`whitespace-nowrap px-4 py-3.5 text-right font-semibold tabular-nums ${
+                              txn.type === 'income' ? 'text-income' : 'text-expense'
+                            }`}
+                          >
+                            {formatMoney(
+                              txn.type === 'income' ? txn.amount_minor : -txn.amount_minor,
+                              { currency, showPlusSign: true }
+                            )}
+                          </td>
+                          <td className="whitespace-nowrap px-4 py-3.5 text-right">
+                            <div className="inline-flex items-center justify-end gap-1">
+                              <button
+                                type="button"
+                                aria-label={`Edit ${txn.description}`}
+                                onClick={() => {
+                                  setEditingTxn(txn);
+                                  setDialogOpen(true);
+                                }}
+                                className="inline-flex min-h-[44px] min-w-[44px] items-center justify-center rounded-control text-muted hover:bg-black/5 hover:text-primary dark:hover:bg-white/5"
+                              >
+                                <Pencil className="h-4 w-4" aria-hidden="true" />
+                              </button>
+                              <button
+                                type="button"
+                                aria-label={`Delete ${txn.description}`}
+                                onClick={() => setDeletingTxn(txn)}
+                                className="inline-flex min-h-[44px] min-w-[44px] items-center justify-center rounded-control text-muted hover:bg-expense/10 hover:text-expense"
+                              >
+                                <Trash2 className="h-4 w-4" aria-hidden="true" />
+                              </button>
+                            </div>
+                          </td>
+                        </tr>
+                      );
+                    })}
                   </tbody>
                 </table>
               </div>
 
               {/* Mobile Card List (< 768px) */}
               <div className="grid grid-cols-1 gap-3 md:hidden">
-                {data.rows.map((txn) => (
-                  <div
-                    key={txn.id}
-                    className="rounded-control border border-border bg-card p-4 space-y-3"
-                  >
-                    <div className="flex items-start justify-between gap-2">
-                      <div className="flex items-start gap-2.5 min-w-0">
-                        <div className="mt-0.5 flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-[#0E3B2C]/10 text-[#0E3B2C] dark:bg-white/10 dark:text-[#EDEBE4]">
-                          <CategoryIcon category={txn.category} className="h-4 w-4" />
+                {data.rows.map((txn) => {
+                  const hasSplit =
+                    txn.type === 'expense' &&
+                    Boolean(txn.is_split) &&
+                    (txn.reimbursable_minor ?? 0) > 0;
+
+                  return (
+                    <div
+                      key={txn.id}
+                      className="rounded-control border border-border bg-card p-4 space-y-3"
+                    >
+                      <div className="flex items-start justify-between gap-2">
+                        <div className="flex items-start gap-2.5 min-w-0">
+                          <div className="mt-0.5 flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-[#0E3B2C]/10 text-[#0E3B2C] dark:bg-white/10 dark:text-[#EDEBE4]">
+                            <CategoryIcon category={txn.category} className="h-4 w-4" />
+                          </div>
+                          <div className="min-w-0">
+                            <p className="font-semibold text-primary truncate">
+                              {txn.description}
+                            </p>
+                            <p className="text-xs text-muted">
+                              {getCategoryLabel(txn.category)} • {formatDisplayDate(txn.txn_date)} •{' '}
+                              {getPaymentMethodShortLabel(txn.payment_method)}
+                            </p>
+                          </div>
                         </div>
-                        <div className="min-w-0">
-                          <p className="font-semibold text-primary truncate">
-                            {txn.description}
+                        <div className="text-right shrink-0">
+                          <p
+                            className={`text-sm font-bold tabular-nums ${
+                              txn.type === 'income' ? 'text-income' : 'text-expense'
+                            }`}
+                          >
+                            {formatMoney(
+                              txn.type === 'income' ? txn.amount_minor : -txn.amount_minor,
+                              { currency, showPlusSign: true }
+                            )}
                           </p>
-                          <p className="text-xs text-muted">
-                            {getCategoryLabel(txn.category)} • {formatDisplayDate(txn.txn_date)}
-                          </p>
+                          <Badge variant={txn.type === 'income' ? 'income' : 'expense'}>
+                            {txn.type === 'income' ? 'Income' : 'Expense'}
+                          </Badge>
                         </div>
                       </div>
-                      <div className="text-right shrink-0">
-                        <p
-                          className={`text-sm font-bold tabular-nums ${
-                            txn.type === 'income' ? 'text-income' : 'text-expense'
-                          }`}
-                        >
-                          {formatMoney(
-                            txn.type === 'income' ? txn.amount_minor : -txn.amount_minor,
-                            { currency, showPlusSign: true }
+
+                      {hasSplit && (
+                        <div className="flex flex-wrap items-center justify-between gap-2 rounded-control bg-page/60 px-3 py-2 text-xs">
+                          <span>
+                            {txn.is_reimbursed
+                              ? `Settled (${formatMoney(txn.reimbursable_minor ?? 0, { currency })})`
+                              : `Owed ${formatMoney(txn.reimbursable_minor ?? 0, { currency })}${
+                                  txn.split_with ? ` by ${txn.split_with}` : ''
+                                }`}
+                          </span>
+                          {!txn.is_reimbursed && (
+                            <Button
+                              variant="outline"
+                              size="sm"
+                              onClick={() =>
+                                settleSplitMutation.mutate({
+                                  id: txn.id,
+                                  is_reimbursed: true,
+                                })
+                              }
+                            >
+                              Mark settled
+                            </Button>
                           )}
-                        </p>
-                        <Badge variant={txn.type === 'income' ? 'income' : 'expense'}>
-                          {txn.type === 'income' ? 'Income' : 'Expense'}
-                        </Badge>
+                        </div>
+                      )}
+
+                      {txn.notes && <p className="text-xs text-muted">{txn.notes}</p>}
+
+                      <div className="flex items-center justify-end gap-2 border-t border-border pt-2">
+                        <Button
+                          variant="ghost"
+                          size="sm"
+                          leftIcon={<Pencil className="h-3.5 w-3.5" />}
+                          onClick={() => {
+                            setEditingTxn(txn);
+                            setDialogOpen(true);
+                          }}
+                        >
+                          Edit
+                        </Button>
+                        <Button
+                          variant="ghost"
+                          size="sm"
+                          className="text-expense"
+                          leftIcon={<Trash2 className="h-3.5 w-3.5" />}
+                          onClick={() => setDeletingTxn(txn)}
+                        >
+                          Delete
+                        </Button>
                       </div>
                     </div>
-
-                    {txn.notes && <p className="text-xs text-muted">{txn.notes}</p>}
-
-                    <div className="flex items-center justify-end gap-2 border-t border-border pt-2">
-                      <Button
-                        variant="ghost"
-                        size="sm"
-                        leftIcon={<Pencil className="h-3.5 w-3.5" />}
-                        onClick={() => {
-                          setEditingTxn(txn);
-                          setDialogOpen(true);
-                        }}
-                      >
-                        Edit
-                      </Button>
-                      <Button
-                        variant="ghost"
-                        size="sm"
-                        className="text-expense"
-                        leftIcon={<Trash2 className="h-3.5 w-3.5" />}
-                        onClick={() => setDeletingTxn(txn)}
-                      >
-                        Delete
-                      </Button>
-                    </div>
-                  </div>
-                ))}
+                  );
+                })}
               </div>
 
               {/* Server-Side Pagination Controls (25 per page) */}

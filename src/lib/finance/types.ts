@@ -32,6 +32,8 @@ export type PeriodKey =
 
 export type ThemePreference = 'light' | 'dark' | 'system';
 
+export type PaymentMethodKey = 'upi' | 'bank' | 'credit_card' | 'cash';
+
 export interface TransactionRecord {
   id: string;
   user_id?: string;
@@ -41,6 +43,11 @@ export interface TransactionRecord {
   category: CategoryKey;
   txn_date: string; // YYYY-MM-DD
   notes?: string | null;
+  payment_method?: PaymentMethodKey;
+  is_split?: boolean;
+  split_with?: string | null;
+  reimbursable_minor?: number;
+  is_reimbursed?: boolean;
   recurring_payment_id?: string | null;
   is_sample?: boolean;
   created_at?: string;

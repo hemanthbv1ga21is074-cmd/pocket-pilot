@@ -28,6 +28,14 @@ import {
   buildOverviewChartData,
   isCategoryValidForType,
   resolveCategoryOnTypeChange,
+  computeWalletSummary,
+  computeSplitReimbursementSummary,
+  getPersonalShareMinor,
+  computeFiftyThirtyTwenty,
+  computeBurnRateForecast,
+  computeMonthlyCalendarHeatmap,
+  computeSubscriptionAudit,
+  computeEmergencyRunway,
 } from '@/lib/finance';
 
 describe('src/lib/finance — Authoritative Business Rules Unit Suite', () => {
@@ -544,6 +552,205 @@ describe('src/lib/finance — Authoritative Business Rules Unit Suite', () => {
       expect(isCategoryValidForType('salary', 'income')).toBe(true);
       expect(isCategoryValidForType('salary', 'expense')).toBe(false);
       expect(resolveCategoryOnTypeChange('salary', 'expense')).toBe('food_dining');
+    });
+  });
+
+  describe('12. Advanced Financial Intelligence & Multi-Account/Split Suite', () => {
+    it('computes multi-account wallet breakdown across UPI, Bank, Credit Card, and Cash', () => {
+      const txns = [
+        {
+          id: '1',
+          type: 'income' as const,
+          amount_minor: 85000_00,
+          description: 'Salary',
+          category: 'salary' as const,
+          txn_date: '2026-10-01',
+          payment_method: 'bank' as const,
+        },
+        {
+          id: '2',
+          type: 'expense' as const,
+          amount_minor: 6000_00,
+          description: 'Groceries',
+          category: 'food_dining' as const,
+          txn_date: '2026-10-03',
+          payment_method: 'upi' as const,
+        },
+        {
+          id: '3',
+          type: 'expense' as const,
+          amount_minor: 4000_00,
+          description: 'Shopping',
+          category: 'shopping' as const,
+          txn_date: '2026-10-05',
+          payment_method: 'credit_card' as const,
+        },
+      ];
+
+      const summary = computeWalletSummary(txns);
+      const upi = summary.find((w) => w.method === 'upi')!;
+      const bank = summary.find((w) => w.method === 'bank')!;
+      const card = summary.find((w) => w.method === 'credit_card')!;
+
+      expect(upi.expenseMinor).toBe(6000_00);
+      expect(upi.expenseSharePct).toBe(60);
+      expect(card.expenseMinor).toBe(4000_00);
+      expect(card.expenseSharePct).toBe(40);
+      expect(bank.incomeMinor).toBe(85000_00);
+    });
+
+    it('computes split transaction reimbursements and personal share', () => {
+      const txns = [
+        {
+          id: 's1',
+          type: 'expense' as const,
+          amount_minor: 3000_00,
+          description: 'Team Dinner',
+          category: 'food_dining' as const,
+          txn_date: '2026-10-10',
+          is_split: true,
+          split_with: 'Rahul & Priya',
+          reimbursable_minor: 2000_00,
+          is_reimbursed: false,
+        },
+        {
+          id: 's2',
+          type: 'expense' as const,
+          amount_minor: 1600_00,
+          description: 'Movie Tickets',
+          category: 'entertainment' as const,
+          txn_date: '2026-10-04',
+          is_split: true,
+          split_with: 'Rohan',
+          reimbursable_minor: 800_00,
+          is_reimbursed: true,
+        },
+      ];
+
+      expect(getPersonalShareMinor(txns[0])).toBe(1000_00);
+      const res = computeSplitReimbursementSummary(txns);
+      expect(res.pendingReimbursementsMinor).toBe(2000_00);
+      expect(res.pendingCount).toBe(1);
+      expect(res.settledReimbursementsMinor).toBe(800_00);
+      expect(res.settledCount).toBe(1);
+    });
+
+    it('analyzes 50 / 30 / 20 Needs, Wants, and Savings split', () => {
+      const txns = [
+        {
+          id: '1',
+          type: 'income' as const,
+          amount_minor: 100000_00,
+          description: 'Salary',
+          category: 'salary' as const,
+          txn_date: '2026-10-01',
+        },
+        {
+          id: '2',
+          type: 'expense' as const,
+          amount_minor: 45000_00,
+          description: 'Rent & Groceries',
+          category: 'housing_rent' as const,
+          txn_date: '2026-10-02',
+        },
+        {
+          id: '3',
+          type: 'expense' as const,
+          amount_minor: 25000_00,
+          description: 'Gadgets',
+          category: 'shopping' as const,
+          txn_date: '2026-10-05',
+        },
+      ];
+
+      const res = computeFiftyThirtyTwenty(txns);
+      expect(res.needsPctOfIncome).toBe(45);
+      expect(res.wantsPctOfIncome).toBe(25);
+      expect(res.savingsPctOfIncome).toBe(30);
+      expect(res.needsStatus).toBe('on_track');
+      expect(res.wantsStatus).toBe('on_track');
+      expect(res.savingsStatus).toBe('on_track');
+    });
+
+    it('computes daily burn rate, projected month-end spend, and calendar heatmap streaks', () => {
+      const txns = [
+        {
+          id: '1',
+          type: 'expense' as const,
+          amount_minor: 10000_00,
+          description: 'Rent',
+          category: 'housing_rent' as const,
+          txn_date: '2026-10-01',
+        },
+        {
+          id: '2',
+          type: 'expense' as const,
+          amount_minor: 5000_00,
+          description: 'Shopping',
+          category: 'shopping' as const,
+          txn_date: '2026-10-02',
+        },
+      ];
+
+      // On 2026-10-05 (5 days elapsed in 31-day month): ₹15,000 spent -> ₹3,000/day -> ₹93,000 EOM
+      const burn = computeBurnRateForecast(txns, '2026-10-05', 60000_00);
+      expect(burn.dailyBurnRateMinor).toBe(3000_00);
+      expect(burn.projectedMonthEndMinor).toBe(93000_00);
+      expect(burn.willExceedBudget).toBe(true);
+      expect(burn.exhaustionDay).toBe(20);
+
+      // Calendar heatmap up to 2026-10-05: days 3, 4, 5 have 0 spend => 3-day no-spend streak
+      const heatmap = computeMonthlyCalendarHeatmap(txns, '2026-10', '2026-10-05');
+      expect(heatmap.elapsedDaysCount).toBe(5);
+      expect(heatmap.noSpendDaysCount).toBe(3);
+      expect(heatmap.currentNoSpendStreak).toBe(3);
+      expect(heatmap.longestNoSpendStreak).toBe(3);
+    });
+
+    it('computes subscription audit and emergency fund survival runway', () => {
+      const payments = [
+        {
+          id: 'p1',
+          name: 'Rent',
+          amount_minor: 20000_00,
+          category: 'housing_rent' as const,
+          frequency: 'monthly' as const,
+          next_due_date: '2026-11-01',
+          anchor_day: 1,
+          is_paid: false,
+        },
+        {
+          id: 'p2',
+          name: 'Streaming',
+          amount_minor: 1000_00,
+          category: 'subscriptions' as const,
+          frequency: 'monthly' as const,
+          next_due_date: '2026-11-05',
+          anchor_day: 5,
+          is_paid: false,
+        },
+      ];
+
+      const audit = computeSubscriptionAudit(payments);
+      expect(audit.monthlyTotalMinor).toBe(21000_00);
+      expect(audit.annualTotalMinor).toBe(252000_00);
+      expect(audit.subscriptionsAnnualMinor).toBe(12000_00);
+
+      const txns = [
+        {
+          id: 'e1',
+          type: 'expense' as const,
+          amount_minor: 30000_00,
+          description: 'Living essentials',
+          category: 'housing_rent' as const,
+          txn_date: '2026-10-01',
+        },
+      ];
+      const runway = computeEmergencyRunway(txns, 90000_00, 30000_00);
+      expect(runway.avgMonthlyEssentialMinor).toBe(30000_00);
+      expect(runway.totalLiquidReserveMinor).toBe(120000_00);
+      expect(runway.runwayMonths).toBe(4);
+      expect(runway.status).toBe('moderate');
     });
   });
 });

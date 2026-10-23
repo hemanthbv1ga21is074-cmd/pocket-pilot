@@ -13,6 +13,7 @@ import {
   type GoalContributionRecord,
   type GoalRecord,
   type PaymentFrequency,
+  type PaymentMethodKey,
   type RecurringPaymentRecord,
   type ThemePreference,
   type TransactionRecord,
@@ -145,6 +146,8 @@ export function useTransactionsRange(startDate?: string, endDate?: string) {
       return (data ?? []).map((row) => ({
         ...row,
         amount_minor: Number(row.amount_minor),
+        payment_method: (row.payment_method as PaymentMethodKey) || 'upi',
+        reimbursable_minor: Number(row.reimbursable_minor ?? 0),
       }));
     },
   });
@@ -156,6 +159,8 @@ export interface PaginatedTransactionsParams {
   search?: string;
   type?: TxnType | 'all';
   category?: CategoryKey | 'all';
+  paymentMethod?: PaymentMethodKey | 'all';
+  onlySplits?: boolean;
   startDate?: string;
   endDate?: string;
   sortBy?: 'txn_date' | 'amount_minor';
@@ -169,6 +174,8 @@ export function usePaginatedTransactions(params: PaginatedTransactionsParams) {
     search = '',
     type = 'all',
     category = 'all',
+    paymentMethod = 'all',
+    onlySplits = false,
     startDate,
     endDate,
     sortBy = 'txn_date',
@@ -179,7 +186,19 @@ export function usePaginatedTransactions(params: PaginatedTransactionsParams) {
     queryKey: [
       ...FINANCE_QUERY_KEY,
       'transactions_paginated',
-      { page, pageSize, search, type, category, startDate, endDate, sortBy, sortDir },
+      {
+        page,
+        pageSize,
+        search,
+        type,
+        category,
+        paymentMethod,
+        onlySplits,
+        startDate,
+        endDate,
+        sortBy,
+        sortDir,
+      },
     ],
     queryFn: async (): Promise<{
       rows: TransactionRecord[];
@@ -194,6 +213,12 @@ export function usePaginatedTransactions(params: PaginatedTransactionsParams) {
       }
       if (category !== 'all') {
         query = query.eq('category', category);
+      }
+      if (paymentMethod !== 'all') {
+        query = query.eq('payment_method', paymentMethod);
+      }
+      if (onlySplits) {
+        query = query.eq('is_split', true);
       }
       if (startDate) {
         query = query.gte('txn_date', startDate);
@@ -223,6 +248,8 @@ export function usePaginatedTransactions(params: PaginatedTransactionsParams) {
         rows: (data ?? []).map((r) => ({
           ...r,
           amount_minor: Number(r.amount_minor),
+          payment_method: (r.payment_method as PaymentMethodKey) || 'upi',
+          reimbursable_minor: Number(r.reimbursable_minor ?? 0),
         })),
         totalCount,
         totalPages,
@@ -238,6 +265,8 @@ export async function fetchFilteredTransactionsForExport(
     search = '',
     type = 'all',
     category = 'all',
+    paymentMethod = 'all',
+    onlySplits = false,
     startDate,
     endDate,
     sortBy = 'txn_date',
@@ -252,6 +281,12 @@ export async function fetchFilteredTransactionsForExport(
   }
   if (category !== 'all') {
     query = query.eq('category', category);
+  }
+  if (paymentMethod !== 'all') {
+    query = query.eq('payment_method', paymentMethod);
+  }
+  if (onlySplits) {
+    query = query.eq('is_split', true);
   }
   if (startDate) {
     query = query.gte('txn_date', startDate);
@@ -273,6 +308,8 @@ export async function fetchFilteredTransactionsForExport(
   return (data ?? []).map((r) => ({
     ...r,
     amount_minor: Number(r.amount_minor),
+    payment_method: (r.payment_method as PaymentMethodKey) || 'upi',
+    reimbursable_minor: Number(r.reimbursable_minor ?? 0),
   }));
 }
 
@@ -366,6 +403,8 @@ export function useRecurringPayments() {
         paidTransactions: (paidTxnsRes.data ?? []).map((t) => ({
           ...t,
           amount_minor: Number(t.amount_minor),
+          payment_method: (t.payment_method as PaymentMethodKey) || 'upi',
+          reimbursable_minor: Number(t.reimbursable_minor ?? 0),
         })),
       };
     },
@@ -502,8 +541,14 @@ export function useCreateTransaction() {
       category: CategoryKey;
       txn_date: string;
       notes?: string | null;
+      payment_method?: PaymentMethodKey;
+      is_split?: boolean;
+      split_with?: string | null;
+      reimbursable_minor?: number;
+      is_reimbursed?: boolean;
     }) => {
       const supabase = getSupabaseBrowserClient();
+      const isSplit = input.type === 'expense' && Boolean(input.is_split);
       const { data, error } = await supabase
         .from('transactions')
         .insert({
@@ -514,6 +559,12 @@ export function useCreateTransaction() {
           category: input.category,
           txn_date: input.txn_date,
           notes: input.notes?.trim() || null,
+          payment_method:
+            input.payment_method || (input.type === 'income' ? 'bank' : 'upi'),
+          is_split: isSplit,
+          split_with: isSplit ? input.split_with?.trim() || null : null,
+          reimbursable_minor: isSplit ? (input.reimbursable_minor ?? 0) : 0,
+          is_reimbursed: isSplit ? Boolean(input.is_reimbursed) : false,
           is_sample: false,
         })
         .select('*')
@@ -542,8 +593,14 @@ export function useUpdateTransaction() {
       category: CategoryKey;
       txn_date: string;
       notes?: string | null;
+      payment_method?: PaymentMethodKey;
+      is_split?: boolean;
+      split_with?: string | null;
+      reimbursable_minor?: number;
+      is_reimbursed?: boolean;
     }) => {
       const supabase = getSupabaseBrowserClient();
+      const isSplit = input.type === 'expense' && Boolean(input.is_split);
       const { data, error } = await supabase
         .from('transactions')
         .update({
@@ -553,6 +610,12 @@ export function useUpdateTransaction() {
           category: input.category,
           txn_date: input.txn_date,
           notes: input.notes?.trim() || null,
+          payment_method:
+            input.payment_method || (input.type === 'income' ? 'bank' : 'upi'),
+          is_split: isSplit,
+          split_with: isSplit ? input.split_with?.trim() || null : null,
+          reimbursable_minor: isSplit ? (input.reimbursable_minor ?? 0) : 0,
+          is_reimbursed: isSplit ? Boolean(input.is_reimbursed) : false,
         })
         .eq('id', input.id)
         .select('*')
@@ -566,6 +629,34 @@ export function useUpdateTransaction() {
     },
     onError: (err: Error) => {
       toast.error(err.message || 'Failed to update transaction');
+    },
+  });
+}
+
+export function useSettleSplitTransaction() {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: async (input: { id: string; is_reimbursed: boolean }) => {
+      const supabase = getSupabaseBrowserClient();
+      const { data, error } = await supabase
+        .from('transactions')
+        .update({ is_reimbursed: input.is_reimbursed })
+        .eq('id', input.id)
+        .select('*')
+        .single();
+      if (error) throw new Error(error.message);
+      return data;
+    },
+    onSuccess: (_data, vars) => {
+      queryClient.invalidateQueries({ queryKey: FINANCE_QUERY_KEY });
+      toast.success(
+        vars.is_reimbursed
+          ? 'Split marked as settled'
+          : 'Split marked as pending reimbursement'
+      );
+    },
+    onError: (err: Error) => {
+      toast.error(err.message || 'Failed to update split reimbursement status');
     },
   });
 }

@@ -36,6 +36,7 @@ import {
   isValidISODate,
   isFutureDate,
   getCategoryLabel,
+  computeSubscriptionAudit,
   type EvaluatedPayment,
   type ExpenseCategoryKey,
   type PaymentFrequency,
@@ -110,6 +111,11 @@ export default function PaymentsPage() {
   const evaluated = React.useMemo(
     () => evaluateAllPayments(rawPayments, today),
     [rawPayments, today]
+  );
+
+  const subscriptionAudit = React.useMemo(
+    () => computeSubscriptionAudit(rawPayments),
+    [rawPayments]
   );
 
   const openCreateDialog = () => {
@@ -354,6 +360,66 @@ export default function PaymentsPage() {
           Add payment
         </Button>
       </div>
+
+      {/* Subscription Audit & Annualized Cost Breakdown (#12) */}
+      {!paymentsQuery.isLoading && !paymentsQuery.isError && subscriptionAudit.activeRecurringCount > 0 && (
+        <div
+          data-testid="subscription-audit-strip"
+          className="grid grid-cols-1 gap-4 sm:grid-cols-3"
+        >
+          <Card>
+            <CardHeader className="pb-2">
+              <CardDescription>Monthly Recurring Commitment</CardDescription>
+              <CardTitle className="text-2xl font-bold tabular-nums text-primary">
+                {formatMoney(subscriptionAudit.monthlyTotalMinor, { currency })}
+                <span className="text-xs font-normal text-muted"> / month</span>
+              </CardTitle>
+            </CardHeader>
+            <CardContent className="flex items-center justify-between text-xs text-muted">
+              <span>{subscriptionAudit.activeRecurringCount} recurring schedules</span>
+              <span>
+                Fixed bills: {formatMoney(subscriptionAudit.fixedBillsMonthlyMinor, { currency })}/mo
+              </span>
+            </CardContent>
+          </Card>
+
+          <Card>
+            <CardHeader className="pb-2">
+              <CardDescription>Annualized Recurring Burn (12 Months)</CardDescription>
+              <CardTitle className="text-2xl font-bold tabular-nums text-expense">
+                {formatMoney(subscriptionAudit.annualTotalMinor, { currency })}
+                <span className="text-xs font-normal text-muted"> / year</span>
+              </CardTitle>
+            </CardHeader>
+            <CardContent className="text-xs text-muted">
+              {subscriptionAudit.items[0] ? (
+                <span>
+                  Top commitment: <strong className="text-primary">{subscriptionAudit.items[0].name}</strong> (
+                  {formatMoney(subscriptionAudit.items[0].annualEquivalentMinor, { currency })}/yr)
+                </span>
+              ) : (
+                <span>No recurring commitments</span>
+              )}
+            </CardContent>
+          </Card>
+
+          <Card>
+            <CardHeader className="pb-2">
+              <CardDescription>Digital Subscriptions Audit</CardDescription>
+              <CardTitle className="text-2xl font-bold tabular-nums text-primary">
+                {formatMoney(subscriptionAudit.subscriptionsAnnualMinor, { currency })}
+                <span className="text-xs font-normal text-muted"> / year</span>
+              </CardTitle>
+            </CardHeader>
+            <CardContent className="flex items-center justify-between text-xs text-muted">
+              <span>{subscriptionAudit.subscriptionsCount} subscription plans</span>
+              <span className="tabular-nums">
+                {formatMoney(subscriptionAudit.subscriptionsMonthlyMinor, { currency })}/mo
+              </span>
+            </CardContent>
+          </Card>
+        </div>
+      )}
 
       {/* Tabs: Upcoming, Overdue, Paid */}
       <div

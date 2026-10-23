@@ -9,3 +9,4 @@ export * from './payments';
 export * from './affordability';
 export * from './charts';
 export * from './csv';
+export * from './insights';

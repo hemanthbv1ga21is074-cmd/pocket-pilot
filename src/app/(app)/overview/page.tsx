@@ -37,6 +37,9 @@ import {
   computeCategoryBreakdown,
   getHighestSpendingCategory,
   computeRemainingMonthlyBudget,
+  computeBurnRateForecast,
+  computeEmergencyRunway,
+  computeSplitReimbursementSummary,
   evaluateGoal,
   buildOverviewChartData,
   getCategoryLabel,
@@ -252,6 +255,31 @@ export default function OverviewPage() {
     setAsideMinor: 0,
     availableToSpendMinor: 0,
   };
+
+  const burnRateForecast = React.useMemo(
+    () =>
+      computeBurnRateForecast(
+        allTransactions,
+        today,
+        remainingMonthlyBudget.hasBudget ? remainingMonthlyBudget.totalLimitMinor : null
+      ),
+    [allTransactions, today, remainingMonthlyBudget]
+  );
+
+  const emergencyRunway = React.useMemo(
+    () =>
+      computeEmergencyRunway(
+        allTransactions,
+        balance.availableToSpendMinor,
+        balance.setAsideMinor
+      ),
+    [allTransactions, balance.availableToSpendMinor, balance.setAsideMinor]
+  );
+
+  const splitSummary = React.useMemo(
+    () => computeSplitReimbursementSummary(allTransactions),
+    [allTransactions]
+  );
 
   return (
     <div className="space-y-6">
@@ -637,6 +665,78 @@ export default function OverviewPage() {
               <span className="text-lg font-bold tabular-nums text-primary">
                 {periodSummary.savingsRateFormatted}
               </span>
+            </div>
+
+            {/* 5. Daily Burn Rate & End-of-Month Forecast (#10) */}
+            <div className="rounded-control border border-border p-3.5 space-y-1.5">
+              <div className="flex items-center justify-between">
+                <p className="text-xs text-muted">
+                  Daily burn rate & EOM forecast ({burnRateForecast.yearMonth})
+                </p>
+                <Badge
+                  variant={
+                    burnRateForecast.status === 'over_pace'
+                      ? 'expense'
+                      : burnRateForecast.status === 'caution'
+                        ? 'warning'
+                        : 'income'
+                  }
+                >
+                  {formatMoney(burnRateForecast.dailyBurnRateMinor, { currency })}/day
+                </Badge>
+              </div>
+              <p className="text-xs text-primary">
+                Projected month-end spend:{' '}
+                <strong className="tabular-nums">
+                  {formatMoney(burnRateForecast.projectedMonthEndMinor, { currency })}
+                </strong>
+              </p>
+              {burnRateForecast.safeDailyAllowanceMinor !== null && (
+                <p className="text-[11px] text-muted">
+                  {burnRateForecast.willExceedBudget && burnRateForecast.exhaustionDay
+                    ? `Pace exceeds budget around day ${burnRateForecast.exhaustionDay}. `
+                    : ''}
+                  Safe daily allowance for remaining {burnRateForecast.daysRemaining}d:{' '}
+                  <strong className="text-primary tabular-nums">
+                    {formatMoney(burnRateForecast.safeDailyAllowanceMinor, { currency })}/day
+                  </strong>
+                </p>
+              )}
+            </div>
+
+            {/* 6. Emergency Fund Runway (#13) */}
+            <div className="rounded-control border border-border p-3.5 space-y-1.5">
+              <div className="flex items-center justify-between">
+                <p className="text-xs text-muted">Emergency survival runway</p>
+                <Badge
+                  variant={
+                    emergencyRunway.status === 'strong'
+                      ? 'success'
+                      : emergencyRunway.status === 'moderate'
+                        ? 'warning'
+                        : 'default'
+                  }
+                >
+                  {emergencyRunway.runwayMonths !== null
+                    ? `${emergencyRunway.runwayMonths} months (~${emergencyRunway.runwayDays}d)`
+                    : 'No expenses yet'}
+                </Badge>
+              </div>
+              {emergencyRunway.runwayMonths !== null && (
+                <p className="text-[11px] text-muted">
+                  Covers essential living costs (
+                  {formatMoney(emergencyRunway.avgMonthlyEssentialMinor, { currency })}/mo avg).{' '}
+                  {splitSummary.pendingReimbursementsMinor > 0 && (
+                    <span>
+                      Plus{' '}
+                      <strong className="text-income tabular-nums">
+                        {formatMoney(splitSummary.pendingReimbursementsMinor, { currency })}
+                      </strong>{' '}
+                      owed to you from split bills.
+                    </span>
+                  )}
+                </p>
+              )}
             </div>
           </CardContent>
         </Card>

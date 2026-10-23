@@ -10,6 +10,9 @@ import {
   TrendingUp,
   TrendingDown,
   AlertCircle,
+  Flame,
+  ShieldCheck,
+  CalendarDays,
 } from 'lucide-react';
 import { toast } from 'sonner';
 import {
@@ -32,6 +35,11 @@ import {
   computePeriodSummary,
   computePeriodComparison,
   computeCategoryBreakdown,
+  computeRemainingMonthlyBudget,
+  computeFiftyThirtyTwenty,
+  computeBurnRateForecast,
+  computeMonthlyCalendarHeatmap,
+  computeEmergencyRunway,
   evaluateMonthlyBudgets,
   buildOverviewChartData,
   transactionsToCsv,
@@ -40,6 +48,7 @@ import {
 import { usePeriodParams } from '@/components/layout/period-selector';
 import {
   useProfile,
+  useBalanceSummary,
   useTransactionsRange,
   useBudgets,
 } from '@/features/shared/use-finance-data';
@@ -78,6 +87,7 @@ export default function AnalyticsPage() {
 
   const allTxnsQuery = useTransactionsRange();
   const budgetsQuery = useBudgets();
+  const balanceQuery = useBalanceSummary();
 
   const [showTrendTable, setShowTrendTable] = React.useState(false);
   const [showSavingsTable, setShowSavingsTable] = React.useState(false);
@@ -85,6 +95,14 @@ export default function AnalyticsPage() {
 
   const allTransactions = allTxnsQuery.data ?? [];
   const budgets = budgetsQuery.data ?? [];
+  const balance = balanceQuery.data ?? {
+    startingBalanceMinor: 0,
+    totalIncomeMinor: 0,
+    totalExpenseMinor: 0,
+    totalBalanceMinor: 0,
+    setAsideMinor: 0,
+    availableToSpendMinor: 0,
+  };
 
   const periodTransactions = React.useMemo(
     () =>
@@ -151,6 +169,52 @@ export default function AnalyticsPage() {
         warnPct
       ),
     [budgets, allTransactions, resolvedPeriod.budgetYearMonth, warnPct]
+  );
+
+  const remainingMonthlyBudget = React.useMemo(
+    () =>
+      computeRemainingMonthlyBudget(
+        budgets,
+        allTransactions,
+        today.slice(0, 7),
+        profile?.overall_monthly_budget_minor
+      ),
+    [budgets, allTransactions, today, profile?.overall_monthly_budget_minor]
+  );
+
+  const fiftyThirtyTwenty = React.useMemo(
+    () => computeFiftyThirtyTwenty(periodTransactions),
+    [periodTransactions]
+  );
+
+  const burnRateForecast = React.useMemo(
+    () =>
+      computeBurnRateForecast(
+        allTransactions,
+        today,
+        remainingMonthlyBudget.hasBudget ? remainingMonthlyBudget.totalLimitMinor : null
+      ),
+    [allTransactions, today, remainingMonthlyBudget]
+  );
+
+  const calendarHeatmap = React.useMemo(
+    () =>
+      computeMonthlyCalendarHeatmap(
+        allTransactions,
+        resolvedPeriod.budgetYearMonth,
+        today
+      ),
+    [allTransactions, resolvedPeriod.budgetYearMonth, today]
+  );
+
+  const emergencyRunway = React.useMemo(
+    () =>
+      computeEmergencyRunway(
+        allTransactions,
+        balance.availableToSpendMinor,
+        balance.setAsideMinor
+      ),
+    [allTransactions, balance.availableToSpendMinor, balance.setAsideMinor]
   );
 
   const handleExportCsv = () => {
@@ -405,6 +469,429 @@ export default function AnalyticsPage() {
           </CardContent>
         </Card>
       </div>
+
+      {/* #9: 50 / 30 / 20 Needs-Wants-Savings Rule Analyzer */}
+      <Card data-testid="fifty-thirty-twenty-card">
+        <CardHeader>
+          <div className="flex flex-wrap items-center justify-between gap-2">
+            <div>
+              <CardTitle>50 / 30 / 20 Rule Analyzer ({resolvedPeriod.label})</CardTitle>
+              <CardDescription>
+                Compares your actual Needs, Wants, and Savings split against the classic 50% / 30% / 20% benchmark
+              </CardDescription>
+            </div>
+            {!fiftyThirtyTwenty.hasIncome && (
+              <Badge variant="warning">Record income to benchmark against 50/30/20</Badge>
+            )}
+          </div>
+        </CardHeader>
+        <CardContent>
+          <div className="grid grid-cols-1 gap-4 md:grid-cols-3">
+            {/* Needs (50%) */}
+            <div className="rounded-control border border-border bg-page/50 p-4 space-y-2.5">
+              <div className="flex items-center justify-between">
+                <span className="text-sm font-semibold text-primary">
+                  Needs (Target ≤ 50%)
+                </span>
+                <Badge
+                  variant={
+                    fiftyThirtyTwenty.needsStatus === 'on_track' ? 'success' : 'warning'
+                  }
+                >
+                  {fiftyThirtyTwenty.hasIncome
+                    ? `${fiftyThirtyTwenty.needsPctOfIncome.toFixed(1)}% of income`
+                    : `${fiftyThirtyTwenty.needsPctOfExpense.toFixed(1)}% of spend`}
+                </Badge>
+              </div>
+              <p className="text-xl font-bold tabular-nums text-primary">
+                {formatMoney(fiftyThirtyTwenty.needsMinor, { currency })}
+              </p>
+              <Progress
+                value={
+                  fiftyThirtyTwenty.hasIncome
+                    ? Math.min(100, (fiftyThirtyTwenty.needsPctOfIncome / 50) * 100)
+                    : fiftyThirtyTwenty.needsPctOfExpense
+                }
+                tone={
+                  fiftyThirtyTwenty.needsStatus === 'on_track' ? 'normal' : 'approaching'
+                }
+                label="Needs share against 50% benchmark"
+              />
+              <p className="text-xs text-muted">
+                Rent, utilities, groceries, healthcare, transport & education.
+                {fiftyThirtyTwenty.hasIncome && (
+                  <>
+                    {' '}
+                    50% target:{' '}
+                    <strong className="text-primary tabular-nums">
+                      {formatMoney(fiftyThirtyTwenty.targetNeedsMinor, { currency })}
+                    </strong>
+                  </>
+                )}
+              </p>
+            </div>
+
+            {/* Wants (30%) */}
+            <div className="rounded-control border border-border bg-page/50 p-4 space-y-2.5">
+              <div className="flex items-center justify-between">
+                <span className="text-sm font-semibold text-primary">
+                  Wants (Target ≤ 30%)
+                </span>
+                <Badge
+                  variant={
+                    fiftyThirtyTwenty.wantsStatus === 'on_track' ? 'success' : 'expense'
+                  }
+                >
+                  {fiftyThirtyTwenty.hasIncome
+                    ? `${fiftyThirtyTwenty.wantsPctOfIncome.toFixed(1)}% of income`
+                    : `${fiftyThirtyTwenty.wantsPctOfExpense.toFixed(1)}% of spend`}
+                </Badge>
+              </div>
+              <p className="text-xl font-bold tabular-nums text-primary">
+                {formatMoney(fiftyThirtyTwenty.wantsMinor, { currency })}
+              </p>
+              <Progress
+                value={
+                  fiftyThirtyTwenty.hasIncome
+                    ? Math.min(100, (fiftyThirtyTwenty.wantsPctOfIncome / 30) * 100)
+                    : fiftyThirtyTwenty.wantsPctOfExpense
+                }
+                tone={
+                  fiftyThirtyTwenty.wantsStatus === 'on_track' ? 'normal' : 'exceeded'
+                }
+                label="Wants share against 30% benchmark"
+              />
+              <p className="text-xs text-muted">
+                Shopping, entertainment, subscriptions & discretionary items.
+                {fiftyThirtyTwenty.hasIncome && (
+                  <>
+                    {' '}
+                    30% target:{' '}
+                    <strong className="text-primary tabular-nums">
+                      {formatMoney(fiftyThirtyTwenty.targetWantsMinor, { currency })}
+                    </strong>
+                  </>
+                )}
+              </p>
+            </div>
+
+            {/* Savings (20%) */}
+            <div className="rounded-control border border-border bg-page/50 p-4 space-y-2.5">
+              <div className="flex items-center justify-between">
+                <span className="text-sm font-semibold text-primary">
+                  Savings (Target ≥ 20%)
+                </span>
+                <Badge
+                  variant={
+                    fiftyThirtyTwenty.savingsStatus === 'on_track' ? 'income' : 'warning'
+                  }
+                >
+                  {fiftyThirtyTwenty.hasIncome
+                    ? `${fiftyThirtyTwenty.savingsPctOfIncome.toFixed(1)}% of income`
+                    : '—'}
+                </Badge>
+              </div>
+              <p className="text-xl font-bold tabular-nums text-income">
+                {formatMoney(fiftyThirtyTwenty.savingsMinor, { currency })}
+              </p>
+              <Progress
+                value={
+                  fiftyThirtyTwenty.hasIncome
+                    ? Math.min(100, (fiftyThirtyTwenty.savingsPctOfIncome / 20) * 100)
+                    : 0
+                }
+                tone="normal"
+                label="Savings rate against 20% benchmark"
+              />
+              <p className="text-xs text-muted">
+                Net unspent cashflow retained from period income.
+                {fiftyThirtyTwenty.hasIncome && (
+                  <>
+                    {' '}
+                    20% target:{' '}
+                    <strong className="text-primary tabular-nums">
+                      {formatMoney(fiftyThirtyTwenty.targetSavingsMinor, { currency })}
+                    </strong>
+                  </>
+                )}
+              </p>
+            </div>
+          </div>
+        </CardContent>
+      </Card>
+
+      {/* #10 Daily Burn Rate & EOM Forecast + #13 Emergency Fund Runway */}
+      <div
+        data-testid="burn-rate-runway-grid"
+        className="grid grid-cols-1 gap-6 lg:grid-cols-2"
+      >
+        <Card>
+          <CardHeader>
+            <div className="flex items-center justify-between">
+              <div>
+                <CardTitle>
+                  Daily Burn Rate & End-of-Month Forecast ({burnRateForecast.yearMonth})
+                </CardTitle>
+                <CardDescription>
+                  Day {burnRateForecast.daysElapsed} of {burnRateForecast.daysInMonth} (
+                  {burnRateForecast.daysRemaining} days remaining this month)
+                </CardDescription>
+              </div>
+              <Flame className="h-5 w-5 text-expense" aria-hidden="true" />
+            </div>
+          </CardHeader>
+          <CardContent className="space-y-4">
+            <div className="grid grid-cols-2 gap-4 rounded-control border border-border bg-page/50 p-3.5">
+              <div>
+                <p className="text-xs text-muted">Current daily burn rate</p>
+                <p className="text-lg font-bold tabular-nums text-primary">
+                  {formatMoney(burnRateForecast.dailyBurnRateMinor, { currency })}/day
+                </p>
+              </div>
+              <div className="text-right">
+                <p className="text-xs text-muted">Projected month-end spend</p>
+                <p
+                  className={`text-lg font-bold tabular-nums ${
+                    burnRateForecast.willExceedBudget ? 'text-expense' : 'text-primary'
+                  }`}
+                >
+                  {formatMoney(burnRateForecast.projectedMonthEndMinor, { currency })}
+                </p>
+              </div>
+            </div>
+
+            {burnRateForecast.monthlyBudgetLimitMinor !== null ? (
+              <div className="space-y-2 text-xs text-muted">
+                <div className="flex items-center justify-between">
+                  <span>Monthly budget limit:</span>
+                  <span className="font-semibold tabular-nums text-primary">
+                    {formatMoney(burnRateForecast.monthlyBudgetLimitMinor, { currency })}
+                  </span>
+                </div>
+                <div className="flex items-center justify-between">
+                  <span>Safe daily allowance for remaining {burnRateForecast.daysRemaining}d:</span>
+                  <span className="font-semibold tabular-nums text-income">
+                    {formatMoney(burnRateForecast.safeDailyAllowanceMinor ?? 0, { currency })}/day
+                  </span>
+                </div>
+                <p className="pt-1 text-primary font-medium">
+                  {burnRateForecast.willExceedBudget && burnRateForecast.exhaustionDay
+                    ? `Warning: At your current pace, you will exhaust your monthly budget around day ${burnRateForecast.exhaustionDay}.`
+                    : `On track: Your current pace projects ${formatMoney(
+                        Math.abs(burnRateForecast.projectedDeltaMinor ?? 0),
+                        { currency }
+                      )} under your monthly budget.`}
+                </p>
+              </div>
+            ) : (
+              <p className="text-xs text-muted">
+                Set a monthly budget on the{' '}
+                <Link href="/budgets" className="font-semibold text-[#14533D] underline dark:text-[#45B883]">
+                  Budgets page
+                </Link>{' '}
+                to unlock safe daily allowance and budget exhaustion alerts.
+              </p>
+            )}
+          </CardContent>
+        </Card>
+
+        <Card>
+          <CardHeader>
+            <div className="flex items-center justify-between">
+              <div>
+                <CardTitle>Emergency Fund Runway (Months of Survival)</CardTitle>
+                <CardDescription>
+                  How long your total balance covers essential living expenses (Needs)
+                </CardDescription>
+              </div>
+              <ShieldCheck className="h-5 w-5 text-income" aria-hidden="true" />
+            </div>
+          </CardHeader>
+          <CardContent className="space-y-4">
+            <div className="grid grid-cols-2 gap-4 rounded-control border border-border bg-page/50 p-3.5">
+              <div>
+                <p className="text-xs text-muted">Estimated survival runway</p>
+                <p className="text-lg font-bold tabular-nums text-income">
+                  {emergencyRunway.runwayMonths !== null
+                    ? `${emergencyRunway.runwayMonths} months (~${emergencyRunway.runwayDays} days)`
+                    : 'No expenses yet'}
+                </p>
+              </div>
+              <div className="text-right">
+                <p className="text-xs text-muted">Avg essential expenses / mo</p>
+                <p className="text-lg font-bold tabular-nums text-primary">
+                  {formatMoney(emergencyRunway.avgMonthlyEssentialMinor, { currency })}
+                </p>
+              </div>
+            </div>
+
+            {emergencyRunway.runwayMonths !== null && (
+              <div className="space-y-2">
+                <div className="flex items-center justify-between text-xs">
+                  <span className="text-muted">Progress toward 6-month safety benchmark:</span>
+                  <span className="font-semibold tabular-nums text-primary">
+                    {emergencyRunway.progressToSixMonthsPct.toFixed(0)}% (Target:{' '}
+                    {formatMoney(emergencyRunway.sixMonthTargetMinor, { currency })})
+                  </span>
+                </div>
+                <Progress
+                  value={emergencyRunway.progressToSixMonthsPct}
+                  tone={
+                    emergencyRunway.status === 'strong'
+                      ? 'normal'
+                      : emergencyRunway.status === 'moderate'
+                        ? 'approaching'
+                        : 'exceeded'
+                  }
+                  label="Emergency fund 6-month target progress"
+                />
+                <p className="text-xs text-muted">
+                  3-month starter target:{' '}
+                  <strong className="text-primary tabular-nums">
+                    {formatMoney(emergencyRunway.threeMonthTargetMinor, { currency })}
+                  </strong>{' '}
+                  • Total liquid reserve:{' '}
+                  <strong className="text-primary tabular-nums">
+                    {formatMoney(emergencyRunway.totalLiquidReserveMinor, { currency })}
+                  </strong>
+                </p>
+              </div>
+            )}
+          </CardContent>
+        </Card>
+      </div>
+
+      {/* #11: Cashflow Calendar Heatmap & No-Spend Day Streak */}
+      <Card data-testid="calendar-heatmap-card">
+        <CardHeader className="flex flex-row flex-wrap items-center justify-between gap-3">
+          <div>
+            <CardTitle className="inline-flex items-center gap-2">
+              <CalendarDays className="h-5 w-5 text-[#14533D] dark:text-[#45B883]" />
+              Cashflow Calendar Heatmap & No-Spend Streak ({calendarHeatmap.yearMonth})
+            </CardTitle>
+            <CardDescription>
+              Daily spending intensity and no-spend discipline across {calendarHeatmap.yearMonth}
+            </CardDescription>
+          </div>
+          <div className="flex flex-wrap items-center gap-2">
+            <Badge variant="income">
+              No-spend days: {calendarHeatmap.noSpendDaysCount} /{' '}
+              {calendarHeatmap.elapsedDaysCount}
+            </Badge>
+            <Badge variant="success">
+              Current streak: {calendarHeatmap.currentNoSpendStreak}d (Best:{' '}
+              {calendarHeatmap.longestNoSpendStreak}d)
+            </Badge>
+          </div>
+        </CardHeader>
+        <CardContent className="space-y-4">
+          <div className="grid grid-cols-7 gap-1.5 text-center text-xs font-semibold text-muted">
+            {['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'].map((d) => (
+              <div key={d} className="py-1">
+                {d}
+              </div>
+            ))}
+          </div>
+
+          <div className="grid grid-cols-7 gap-1.5">
+            {Array.from({ length: calendarHeatmap.leadingEmptyCells }).map((_, idx) => (
+              <div
+                key={`empty-${idx}`}
+                className="min-h-[56px] rounded-control bg-transparent"
+              />
+            ))}
+
+            {calendarHeatmap.days.map((cell) => {
+              let bgClass =
+                'border-border bg-card text-primary';
+              let statusLabel = 'No spend';
+
+              if (cell.isFuture) {
+                bgClass = 'border-border/50 bg-page/40 text-muted opacity-55';
+                statusLabel = 'Upcoming';
+              } else if (cell.intensity === 0) {
+                bgClass =
+                  'border-income/30 bg-income/10 text-primary';
+                statusLabel = '₹0 spend';
+              } else if (cell.intensity === 1) {
+                bgClass =
+                  'border-[#D9A441]/40 bg-[#D9A441]/10 text-primary';
+                statusLabel = 'Low';
+              } else if (cell.intensity === 2) {
+                bgClass =
+                  'border-expense/40 bg-expense/10 text-primary';
+                statusLabel = 'Medium';
+              } else if (cell.intensity === 3) {
+                bgClass =
+                  'border-expense bg-expense/20 text-primary font-semibold';
+                statusLabel = 'High';
+              }
+
+              return (
+                <div
+                  key={cell.date}
+                  title={`${cell.date}: Spent ${formatMoney(cell.expenseMinor, {
+                    currency,
+                  })} • Income ${formatMoney(cell.incomeMinor, { currency })}`}
+                  className={`flex min-h-[60px] flex-col justify-between rounded-control border p-2 text-xs transition-colors ${bgClass} ${
+                    cell.isToday ? 'ring-2 ring-[#14533D] dark:ring-[#45B883]' : ''
+                  }`}
+                >
+                  <div className="flex items-center justify-between">
+                    <span className="font-bold tabular-nums">{cell.dayOfMonth}</span>
+                    {cell.incomeMinor > 0 && (
+                      <span className="h-2 w-2 rounded-full bg-income" title="Income received" />
+                    )}
+                  </div>
+                  <div className="mt-1 truncate text-[10px] tabular-nums">
+                    {cell.isFuture
+                      ? '—'
+                      : cell.expenseMinor > 0
+                        ? formatMoney(cell.expenseMinor, { currency })
+                        : statusLabel}
+                  </div>
+                </div>
+              );
+            })}
+          </div>
+
+          <div className="flex flex-wrap items-center justify-between gap-2 pt-1 text-xs text-muted">
+            <div className="flex flex-wrap items-center gap-3">
+              <span className="inline-flex items-center gap-1.5">
+                <span className="h-3 w-3 rounded-sm border border-income/40 bg-income/15" />
+                No-spend day (₹0)
+              </span>
+              <span className="inline-flex items-center gap-1.5">
+                <span className="h-3 w-3 rounded-sm border border-[#D9A441]/50 bg-[#D9A441]/15" />
+                Low spend
+              </span>
+              <span className="inline-flex items-center gap-1.5">
+                <span className="h-3 w-3 rounded-sm border border-expense/50 bg-expense/15" />
+                Medium spend
+              </span>
+              <span className="inline-flex items-center gap-1.5">
+                <span className="h-3 w-3 rounded-sm border border-expense bg-expense/30" />
+                High spend
+              </span>
+            </div>
+            {calendarHeatmap.highestSpendDay && (
+              <span>
+                Peak spend day:{' '}
+                <strong className="text-primary">
+                  {formatDisplayDate(calendarHeatmap.highestSpendDay.date)}
+                </strong>{' '}
+                (
+                <span className="tabular-nums text-expense font-semibold">
+                  {formatMoney(calendarHeatmap.highestSpendDay.expenseMinor, {
+                    currency,
+                  })}
+                </span>
+                )
+              </span>
+            )}
+          </div>
+        </CardContent>
+      </Card>
 
       {/* Top Spending Categories + Budget Performance */}
       <div className="grid grid-cols-1 gap-6 lg:grid-cols-2">
