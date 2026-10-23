@@ -35,6 +35,7 @@ PocketPilot is a responsive personal-finance web application designed for studen
    - `supabase/migrations/20261022000001_schema_and_rls.sql`
    - `supabase/migrations/20261022000002_rpcs_and_seed.sql`
    - `supabase/migrations/20261022000003_auth_provisioning.sql`
+   - `supabase/migrations/20261023000004_accounts_and_splits.sql`
 
    Using the Supabase CLI:
    ```bash
@@ -131,6 +132,14 @@ src/
 7. **Recurring Payments (`payments.ts`)**: Monthly/quarterly/yearly bills advance from their `anchor_day` (e.g., `anchor_day = 31` advances `Jan 31 → Feb 28/29 → Mar 31`). Marking paid inserts a linked expense transaction; Undo deletes that transaction and restores the previous due date.
 8. **Affordability (`affordability.ts`)**: $\text{Remaining} = \text{Balance} - \text{Purchase}$. Outcomes: `Comfortable` ($\text{Remaining} \ge \text{Reserve}$), `Dips into reserve` ($0 \le \text{Remaining} < \text{Reserve}$), `Exceeds balance` ($\text{Remaining} < 0$).
 9. **CSV Export (`csv.ts`)**: UTF-8 with BOM (`\uFEFF`), RFC-4180 quoting, and single-quote (`'`) prefixing for cells beginning with `=`, `+`, `-`, or `@`.
+10. **Advanced Deterministic Intelligence (`insights.ts`)**:
+   - **Multi-Account / Wallet Breakdown**: Tracks spend and net cashflow across `UPI / Digital Wallet`, `Bank Account`, `Credit Card`, and `Cash`.
+   - **Split Bills & Reimbursements**: Tracks shared expenses (`is_split`, `split_with`, `reimbursable_minor`, `is_reimbursed`), personal share vs. amount owed back by friends, and one-click settlement.
+   - **50 / 30 / 20 Rule Analyzer**: Benchmarks period expenses and savings against the classic `50% Needs / 30% Wants / 20% Savings` rule.
+   - **Daily Burn Rate & End-of-Month Forecast**: Projects month-end spend from daily velocity, computes safe daily allowance for remaining days, and warns of budget exhaustion day.
+   - **Cashflow Calendar Heatmap & No-Spend Streak**: Maps daily spend intensity across the calendar month and tracks consecutive ₹0-spend days.
+   - **Subscription & Recurring Audit**: Normalizes weekly/monthly/quarterly/yearly recurring bills into monthly and 12-month annualized commitments.
+   - **Emergency Fund Survival Runway**: Calculates how many months and days of essential living expenses (`Needs`) your liquid reserve covers against 3-month and 6-month benchmarks.
 
 ---
 
